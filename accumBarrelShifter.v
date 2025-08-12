@@ -1,75 +1,89 @@
 `timescale 1ns / 1ps
 
-module abstest(
+module my_abstest(
 
-    input wire clk_1MHz, rst,
-    input wire [4:0] partialSum,
-    output reg [7:0] op
+    input wire clk, rst,
+    input wire [4:0] partial_sum,
+    output reg [7:0] op, 
+    output reg op_valid
 
     );
 
-    reg [7:0] macOp;
+    reg [7:0] accumulator;
     reg [2:0] state, next_state;
     
-    parameter RESET = 3'b000, MSB = 3'b001, STAGETWO = 3'b010, STAGETHREE = 3'b011, FINALMAC = 3'b100;
-
-    initial begin
-        
-        state = RESET;
-        macOp = 0;
-        
-    end
-
-    always @(posedge clk_1MHz or posedge rst) begin
-
+    parameter IDLE = 3'b00; 
+    parameter MSB = 3'b001; // Stage 1: Left Shift by 3
+    parameter LSB1 = 3'b010; // Stage 1: Left Shift by 2
+    parameter LSB2 = 3'b011; // Stage 1: Left Shift by 1
+    parameter LSB = 3'b100; // Stage 1: No Shift (Left Shift by 0)
+    
+    //Sequential logic to decide when to change states and calculate Accumulator values
+    always @(posedge clk or posedge rst) begin
+    
         if(rst) begin
-            state <= RESET;
+        
+            state <= IDLE;
+            accumulator <= 7'b0;
+            op <= 7'b0;
+            op_valid <= 1'b0;
+        
         end
-
+        
         else begin
-            if(state != next_state) begin
-                state <= next_state;
-            end
+        
+            state <= next_state;
+            op_valid <= 1'b0;
+            
+            case(state) 
+            
+                IDLE: begin
+                    accumulator <= 0;
+                end
+                
+                MSB: begin
+                    accumulator <= partial_sum << 3;
+                end
+                
+                LSB1: begin
+                    accumulator <= accumulator + (partial_sum << 2);
+                end
+                
+                LSB2: begin
+                    accumulator <= accumulator + (partial_sum << 1);
+                end
+                
+                LSB: begin
+                    accumulator <= accumulator + partial_sum;
+                    op <= accumulator + partial_sum;
+                    op_valid <= 1'b1;
+                end
+                
+             endcase
+        
         end
-
+    
     end
-
-    always @(partialSum) begin
-
+    
+    //Combinational logic to decide next state when partial_sum input changes (AKA new sum calculated by Adder Tree)
+    always @(*) begin
+    
         case(state)
-
-            RESET: begin
-                macOp = 0;
-                next_state = MSB;
-            end
-
-            MSB: begin
-                macOp = partialSum << 3;
-                next_state = STAGETWO;
-            end
-
-            STAGETWO: begin
-                macOp = macOp + (partialSum << 2);
-                next_state = STAGETHREE;
-            end            
-
-            STAGETHREE: begin
-                macOp = macOp + (partialSum << 1);
-                next_state = FINALMAC;
-            end
-
-            FINALMAC: begin
-                macOp = macOp + partialSum;
-                op = macOp;
-                next_state = RESET;
-            end
-
-            default: begin
-                next_state = RESET;
-            end
-
+        
+            IDLE: next_state = MSB;
+            
+            MSB: next_state = LSB1;
+            
+            LSB1: next_state = LSB2;
+            
+            LSB2: next_state = LSB;
+            
+            LSB: next_state = IDLE;
+            
+            default: next_state = IDLE;
+        
         endcase
-
+    
     end
 
 endmodule
